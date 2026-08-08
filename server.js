@@ -31,6 +31,23 @@ function looksLikeRobloxUsername(text) {
   return true;
 }
 
+// Temporary debug helper: safely JSON-stringify TikTok event payloads for
+// logging, without crashing on BigInt fields or blowing up on huge binary blobs.
+function safeStringify(obj) {
+  try {
+    return JSON.stringify(
+      obj,
+      (key, value) => {
+        if (typeof value === "bigint") return value.toString();
+        if (value instanceof Uint8Array) return `[bytes:${value.length}]`;
+        return value;
+      }
+    ).slice(0, 3000);
+  } catch (err) {
+    return `[could not stringify: ${err.message}]`;
+  }
+}
+
 function connectToTikTok() {
   const connection = new TikTokLiveConnection(TIKTOK_USERNAME, {});
 
@@ -43,9 +60,13 @@ function connectToTikTok() {
   });
 
   connection.on(WebcastEvent.FOLLOW, (data) => {
+    console.log("RAW FOLLOW keys:", Object.keys(data || {}));
+    console.log("RAW FOLLOW.user keys:", data?.user ? Object.keys(data.user) : "no user field");
+    console.log("RAW FOLLOW dump:", safeStringify(data));
+
     const uniqueId = data.user?.uniqueId;
     const userId = data.user?.userId;
-    console.log(`FOLLOW (fast path): ${uniqueId}`);
+    console.log(`FOLLOW (fast path): uniqueId=${uniqueId} userId=${userId}`);
     if (userId) recentFollowers.set(userId, Date.now());
   });
 
@@ -54,6 +75,7 @@ function connectToTikTok() {
   // always true depending on language/region. WebcastEvent.SOCIAL fires for
   // every follow AND share, so we double check it ourselves as a safety net.
   connection.on(WebcastEvent.SOCIAL, (data) => {
+    console.log("RAW SOCIAL dump:", safeStringify(data));
     const uniqueId = data.user?.uniqueId;
     const userId = data.user?.userId;
     const label = (
@@ -64,7 +86,7 @@ function connectToTikTok() {
       ""
     ).toString().toLowerCase();
 
-    console.log(`SOCIAL event from ${uniqueId}, label="${label}"`);
+    console.log(`SOCIAL event from uniqueId=${uniqueId} userId=${userId}, label="${label}"`);
 
     if (label.includes("follow") && userId) {
       console.log(`FOLLOW (fallback path): ${uniqueId}`);
@@ -73,12 +95,16 @@ function connectToTikTok() {
   });
 
   connection.on(WebcastEvent.CHAT, (data) => {
+    console.log("RAW CHAT keys:", Object.keys(data || {}));
+    console.log("RAW CHAT.user keys:", data?.user ? Object.keys(data.user) : "no user field");
+    console.log("RAW CHAT dump:", safeStringify(data));
+
     const userId = data.user?.userId;
     const uniqueId = data.user?.uniqueId;
     const message = data.comment;
     const followedAt = recentFollowers.get(userId);
 
-    console.log(`CHAT from ${uniqueId}: "${message}" | armed=${!!followedAt}`);
+    console.log(`CHAT from uniqueId=${uniqueId} userId=${userId}: "${message}" | armed=${!!followedAt}`);
 
     if (!followedAt) return; // they haven't followed (or already used their turn)
     if (Date.now() - followedAt > FOLLOW_WINDOW_MS) {
