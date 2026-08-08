@@ -1,0 +1,13 @@
+{
+  "name": "tiktok-roblox-bridge",
+  "version": "1.0.0",
+  "description": "Bridges TikTok LIVE follow+chat events to a Roblox game's NPC spawner",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "tiktok-live-connector": "^1.2.16"
+  }
+}
