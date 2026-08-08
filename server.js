@@ -32,7 +32,7 @@ function looksLikeRobloxUsername(text) {
 }
 
 function connectToTikTok() {
-  const connection = new TikTokLiveConnection(TIKTOK_USERNAME);
+  const connection = new TikTokLiveConnection(TIKTOK_USERNAME, {});
 
   connection.connect().then((state) => {
     console.log(`Connected to TikTok LIVE room ${state.roomId} for @${TIKTOK_USERNAME}`);
@@ -95,4 +95,3 @@ app.listen(PORT, () => {
   console.log(`Bridge server listening on port ${PORT}`);
   connectToTikTok();
 });
-
