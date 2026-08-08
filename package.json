@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "express": "^4.19.2",
-    "tiktok-live-connector": "^1.2.16"
+    "tiktok-live-connector": "^2.4.3"
   }
 }
+
