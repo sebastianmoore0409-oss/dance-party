@@ -4,7 +4,7 @@
 // Roblox polls GET /queue to fetch (and clear) pending usernames.
 
 const express = require("express");
-const { WebcastPushConnection } = require("tiktok-live-connector");
+const { TikTokLiveConnection, WebcastEvent } = require("tiktok-live-connector");
 
 // ---- CONFIG -----------------------------------------------------------
 const TIKTOK_USERNAME = process.env.TIKTOK_USERNAME || "your_tiktok_username"; // no @
@@ -32,7 +32,7 @@ function looksLikeRobloxUsername(text) {
 }
 
 function connectToTikTok() {
-  const connection = new WebcastPushConnection(TIKTOK_USERNAME);
+  const connection = new TikTokLiveConnection(TIKTOK_USERNAME);
 
   connection.connect().then((state) => {
     console.log(`Connected to TikTok LIVE room ${state.roomId} for @${TIKTOK_USERNAME}`);
@@ -42,28 +42,32 @@ function connectToTikTok() {
     setTimeout(connectToTikTok, 15000);
   });
 
-  connection.on("follow", (data) => {
-    console.log(`FOLLOW: ${data.uniqueId}`);
-    recentFollowers.set(data.userId, Date.now());
+  connection.on(WebcastEvent.FOLLOW, (data) => {
+    const uniqueId = data.user?.uniqueId;
+    const userId = data.user?.userId;
+    console.log(`FOLLOW: ${uniqueId}`);
+    if (userId) recentFollowers.set(userId, Date.now());
   });
 
-  connection.on("chat", (data) => {
-    const followedAt = recentFollowers.get(data.userId);
+  connection.on(WebcastEvent.CHAT, (data) => {
+    const userId = data.user?.userId;
+    const uniqueId = data.user?.uniqueId;
+    const followedAt = recentFollowers.get(userId);
     if (!followedAt) return; // they haven't followed (or already used their turn)
     if (Date.now() - followedAt > FOLLOW_WINDOW_MS) {
-      recentFollowers.delete(data.userId);
+      recentFollowers.delete(userId);
       return;
     }
 
     const message = data.comment;
     if (looksLikeRobloxUsername(message)) {
-      console.log(`QUEUING SPAWN: ${message} (from TikTok user ${data.uniqueId})`);
+      console.log(`QUEUING SPAWN: ${message} (from TikTok user ${uniqueId})`);
       spawnQueue.push({
         robloxUsername: message.trim(),
-        tiktokUser: data.uniqueId,
+        tiktokUser: uniqueId,
         queuedAt: Date.now(),
       });
-      recentFollowers.delete(data.userId); // they've used their one spawn
+      recentFollowers.delete(userId); // they've used their one spawn
     }
   });
 
@@ -91,3 +95,4 @@ app.listen(PORT, () => {
   console.log(`Bridge server listening on port ${PORT}`);
   connectToTikTok();
 });
+
