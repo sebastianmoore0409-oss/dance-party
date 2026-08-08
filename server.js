@@ -45,21 +45,47 @@ function connectToTikTok() {
   connection.on(WebcastEvent.FOLLOW, (data) => {
     const uniqueId = data.user?.uniqueId;
     const userId = data.user?.userId;
-    console.log(`FOLLOW: ${uniqueId}`);
+    console.log(`FOLLOW (fast path): ${uniqueId}`);
     if (userId) recentFollowers.set(userId, Date.now());
+  });
+
+  // Fallback: the library's built-in "follow" event only fires if TikTok's
+  // internal text key literally contains the word "follow", which isn't
+  // always true depending on language/region. WebcastEvent.SOCIAL fires for
+  // every follow AND share, so we double check it ourselves as a safety net.
+  connection.on(WebcastEvent.SOCIAL, (data) => {
+    const uniqueId = data.user?.uniqueId;
+    const userId = data.user?.userId;
+    const label = (
+      data.common?.displayText?.key ||
+      data.common?.displayText?.label ||
+      data.event?.eventDetails?.displayType ||
+      data.event?.eventDetails?.label ||
+      ""
+    ).toString().toLowerCase();
+
+    console.log(`SOCIAL event from ${uniqueId}, label="${label}"`);
+
+    if (label.includes("follow") && userId) {
+      console.log(`FOLLOW (fallback path): ${uniqueId}`);
+      recentFollowers.set(userId, Date.now());
+    }
   });
 
   connection.on(WebcastEvent.CHAT, (data) => {
     const userId = data.user?.userId;
     const uniqueId = data.user?.uniqueId;
+    const message = data.comment;
     const followedAt = recentFollowers.get(userId);
+
+    console.log(`CHAT from ${uniqueId}: "${message}" | armed=${!!followedAt}`);
+
     if (!followedAt) return; // they haven't followed (or already used their turn)
     if (Date.now() - followedAt > FOLLOW_WINDOW_MS) {
       recentFollowers.delete(userId);
       return;
     }
 
-    const message = data.comment;
     if (looksLikeRobloxUsername(message)) {
       console.log(`QUEUING SPAWN: ${message} (from TikTok user ${uniqueId})`);
       spawnQueue.push({
@@ -68,6 +94,8 @@ function connectToTikTok() {
         queuedAt: Date.now(),
       });
       recentFollowers.delete(userId); // they've used their one spawn
+    } else {
+      console.log(`Rejected "${message}" as not a valid-looking Roblox username`);
     }
   });
 
@@ -89,6 +117,25 @@ app.get("/queue", (req, res) => {
 
 app.get("/health", (req, res) => {
   res.json({ ok: true, queued: spawnQueue.length, armedFollowers: recentFollowers.size });
+});
+
+// Manual test trigger — lets you queue a spawn without needing a real TikTok
+// follow/chat event. Handy while you're building and testing the Roblox side.
+// Example: https://your-app.onrender.com/test-spawn?key=YOUR_SECRET&username=Builderman
+app.get("/test-spawn", (req, res) => {
+  if (req.query.key !== SHARED_SECRET) {
+    return res.status(401).json({ error: "bad key" });
+  }
+  const username = (req.query.username || "").trim();
+  if (!looksLikeRobloxUsername(username)) {
+    return res.status(400).json({ error: "give a valid ?username= in the URL" });
+  }
+  spawnQueue.push({
+    robloxUsername: username,
+    tiktokUser: "manual-test",
+    queuedAt: Date.now(),
+  });
+  res.json({ ok: true, queued: username });
 });
 
 app.listen(PORT, () => {
